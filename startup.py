@@ -38,7 +38,7 @@ def getssid():
 def id_generator(size=6, chars=string.ascii_lowercase + string.digits):
     return ''.join(random.choice(chars) for _ in range(size))
 
-wpa_conf = """country=GB
+wpa_conf = """country=US
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 network={
@@ -46,7 +46,7 @@ network={
     %s
 }"""
 
-wpa_conf_default = """country=GB
+wpa_conf_default = """country=US
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 """
@@ -56,6 +56,7 @@ update_config=1
 @app.route('/')
 def main():
     piid = open('pi.id', 'r').read().strip()
+    # TODO: UPDATE THIS TO REFLECT ACTUAL CONTACT METHOD (SMS?)
     return render_template('index.html', ssids=getssid(), message="Once connected you'll find IP address @ <a href='https://snaptext.live/{}' target='_blank'>snaptext.live/{}</a>.".format(piid,piid))
 
 # Captive portal when connected with iOS or Android
@@ -156,12 +157,14 @@ def signin():
         # User will not see this because they will be disconnected but we need to break here anyway
         return render_template('ap.html', message="Wrong password!")
 
+    # Configure the WiFi module to connect to the desired network
     with open('wpa.conf', 'w') as f:
         f.write(wpa_conf % (ssid, pwd))
     with open('status.json', 'w') as f:
         f.write(json.dumps({'status':'disconnected'}))
     subprocess.Popen(["./disable_ap.sh"])
     piid = open('pi.id', 'r').read().strip()
+    # TODO: UPDATE THIS MESSAGE BASED ON THE CONTACT METHOD USED (SMS?)
     return render_template('index.html', message="Please wait 2 minutes to connect. Then your IP address will show up at <a href='https://snaptext.live/{}'>snaptext.live/{}</a>.".format(piid,piid))
 
 def wificonnected():
@@ -215,9 +218,11 @@ if __name__ == "__main__":
         ipaddress = s.getsockname()[0]
         s.close()
 
-        # alert user on snaptext
-        r = requests.post("https://snaptext.live",data=json.dumps({"message":"Your Pi is online at {}".format(ipaddress),"to":piid,"from":"Raspberry Pi Turnkey"}))
-        print(r.json())
+        # alert user via sms 
+        # r = requests.post("https://snaptext.live",data=json.dumps({"message":"Your Pi is online at {}".format(ipaddress),"to":piid,"from":"Raspberry Pi Turnkey"}))
+        # print(r.json())
+
+        ## STARTUP K3S
         subprocess.Popen("./startup.sh")
         while True:
             time.sleep(60000)
