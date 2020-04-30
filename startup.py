@@ -8,9 +8,14 @@ import time
 import os
 import socket
 import requests
+import logging
+import sys
 
 from flask import Flask, request, send_from_directory, jsonify, render_template, redirect
 app = Flask(__name__, static_url_path='')
+
+logfile = '/home/pi/raspberry-pi-turnkey/turnkey.log'
+logging.basicConfig(filename=logfile, filemode='w', level=logging.DEBUG)
 
 currentdir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(currentdir)
@@ -18,6 +23,7 @@ os.chdir(currentdir)
 ssid_list = []
 def getssid():
     global ssid_list
+    logging.debug('entered getssid()')
     if len(ssid_list) > 0:
         return ssid_list
     ssid_list = []
@@ -31,11 +37,12 @@ def getssid():
                 ssid_list.append(a[1])
             except:
                 pass
-    print(ssid_list)
+    logging.debug(ssid_list)
     ssid_list = sorted(list(set(ssid_list)))
     return ssid_list
 
 def id_generator(size=6, chars=string.ascii_lowercase + string.digits):
+    logging.debug("running id_generator()")
     return ''.join(random.choice(chars) for _ in range(size))
 
 wpa_conf = """country=US
@@ -55,6 +62,7 @@ update_config=1
 
 @app.route('/')
 def main():
+    logging.debug('entered main()')
     piid = open('pi.id', 'r').read().strip()
     # TODO: UPDATE THIS TO REFLECT ACTUAL CONTACT METHOD (SMS?)
     return render_template('index.html', ssids=getssid(), message="Once connected you'll find IP address @ <a href='https://snaptext.live/{}' target='_blank'>snaptext.live/{}</a>.".format(piid,piid))
@@ -62,23 +70,31 @@ def main():
 # Captive portal when connected with iOS or Android
 @app.route('/generate_204')
 def redirect204():
+    logging.debug('entered redirect204()')
     return redirect("http://192.168.4.1", code=302)
 
 @app.route('/hotspot-detect.html')
 def applecaptive():
+    logging.debug('entered applecaptive()')
     return redirect("http://192.168.4.1", code=302)
 
 # Not working for Windows, needs work!
 @app.route('/ncsi.txt')
 def windowscaptive():
+    logging.debug('entered windowscaptive()')
     return redirect("http://192.168.4.1", code=302)
 
 def check_cred(ssid, password):
+    logging.debug('entered check_cred()')
     '''Validates ssid and password and returns True if valid and False if not valid'''
     wpadir = currentdir + '/wpa/'
     testconf = wpadir + 'test.conf'
     wpalog = wpadir + 'wpa.log'
     wpapid = wpadir + 'wpa.pid'
+    logging.debug("wpadir: " + wpadir)
+    logging.debug("testconf: " + testconf)
+    logging.debug("wpalog: " + wpalog) 
+    logging.debug("wpapid: " + wpapid)
 
     if not os.path.exists(wpadir):
         os.mkdir(wpadir)
@@ -89,17 +105,27 @@ def check_cred(ssid, password):
 
     # Generate temp wpa.conf
     result = subprocess.check_output(['wpa_passphrase', ssid, password])
+    logging.debug("generated wpa.conf with result: '" + result.decode('utf-8') + "'")
     with open(testconf, 'w') as f:
         f.write(result.decode('utf-8'))
 
     def stop_ap(stop):
+        logging.debug("stop request is: " + str(stop))
         if stop:
+            logging.debug("stopping services [hostapd,dnsmaq,dhcpcd]")
             # Services need to be stopped to free up wlan0 interface
-            print(subprocess.check_output(['systemctl', "stop", "hostapd", "dnsmasq", "dhcpcd"]))
+            logging.debug(subprocess.check_output(['systemctl', "stop", "hostapd", "dnsmasq", "dhcpcd"]).decode('utf-8'))
+            # wpa_supplicant will need to be started
+            logging.debug(subprocess.check_output(['systemctl', "enable", "wpa_supplicant"]).decode('utf-8'))
+            logging.debug(subprocess.check_output(['systemctl', "start", "wpa_supplicant"]).decode('utf-8'))
         else:
-            print(subprocess.check_output(['systemctl', "restart", "dnsmasq", "dhcpcd"]))
+            logging.debug("starting services [hostapd,dnsmaq,dhcpcd]")
+            # wpa_supplicant should be stopped before we re-enable the AP
+            logging.debug(subprocess.check_output(['systemctl', "stop", "wpa_supplicant"]).decode('utf-8'))
+            logging.debug(subprocess.check_output(['systemctl', "disable", "wpa_supplicant"]).decode('utf-8'))
+            logging.debug(subprocess.check_output(['systemctl', "restart", "dnsmasq", "dhcpcd"]).decode('utf-8'))
             time.sleep(15)
-            print(subprocess.check_output(['systemctl', "restart", "hostapd"]))
+            logging.debug(subprocess.check_output(['systemctl', "restart", "hostapd"]).decode('utf-8'))
 
     # Sentences to check for
     fail = "pre-shared key may be incorrect"
@@ -107,14 +133,16 @@ def check_cred(ssid, password):
 
     stop_ap(True)
 
+    # RPi 4 driver is wext. RPi older driver is nl80211
     result = subprocess.check_output(['wpa_supplicant',
-                                      "-Dnl80211",
+                                      "-Dwext",
                                       "-iwlan0",
-                                      "-c/" + testconf,
+                                      "-c", testconf,
                                       "-f", wpalog,
                                       "-B",
                                       "-P", wpapid])
 
+    logging.debug("wpa_supplicant test credentials outcome: '" + result.decode('utf-8') + "'")
     checkwpa = True
     while checkwpa:
         with open(wpalog, 'r') as f:
@@ -139,10 +167,12 @@ def check_cred(ssid, password):
 
 @app.route('/static/<path:path>')
 def send_static(path):
+    logging.debug('entered send_static()')
     return send_from_directory('static', path)
 
 @app.route('/signin', methods=['POST'])
 def signin():
+    logging.debug('entered signin()')
     email = request.form['email']
     ssid = request.form['ssid']
     password = request.form['password']
@@ -151,8 +181,9 @@ def signin():
     if password == "":
         pwd = "key_mgmt=NONE" # If open AP
 
-    print(email, ssid, password)
+    logging.debug(email + ssid + password)
     valid_psk = check_cred(ssid, password)
+    logging.debug("valid_psk: " + str(valid_psk))
     if not valid_psk:
         # User will not see this because they will be disconnected but we need to break here anyway
         return render_template('ap.html', message="Wrong password!")
@@ -168,23 +199,28 @@ def signin():
     return render_template('index.html', message="Please wait 2 minutes to connect. Then your IP address will show up at <a href='https://snaptext.live/{}'>snaptext.live/{}</a>.".format(piid,piid))
 
 def wificonnected():
+    logging.debug('entered wificonnected()')
     result = subprocess.check_output(['iwconfig', 'wlan0'])
+    logging.debug("iwconfig wlan0: " + result.decode('utf-8'))
     matches = re.findall(r'\"(.+?)\"', result.split(b'\n')[0].decode('utf-8'))
     if len(matches) > 0:
-        print("got connected to " + matches[0])
+        logging.debug("got connected to " + matches[0])
         return True
     return False
 
 if __name__ == "__main__":
     # things to run the first time it boots
+    
+    # Create a unique id for the device
     if not os.path.isfile('pi.id'):
         with open('pi.id', 'w') as f:
             f.write(id_generator())
-        subprocess.Popen("./expand_filesystem.sh")
+        #subprocess.Popen("./expand_filesystem.sh")
         time.sleep(300)
     piid = open('pi.id', 'r').read().strip()
-    print(piid)
+    logging.debug(piid)
     time.sleep(15)
+        
     # get status
     s = {'status':'disconnected'}
     if not os.path.isfile('status.json'):
@@ -193,7 +229,7 @@ if __name__ == "__main__":
     else:
         s = json.load(open('status.json'))
 
-    # check connection
+    #check connection
     if wificonnected():
         s['status'] = 'connected'
     if not wificonnected():
@@ -218,12 +254,12 @@ if __name__ == "__main__":
         ipaddress = s.getsockname()[0]
         s.close()
 
-        # alert user via sms 
-        # r = requests.post("https://snaptext.live",data=json.dumps({"message":"Your Pi is online at {}".format(ipaddress),"to":piid,"from":"Raspberry Pi Turnkey"}))
-        # print(r.json())
+        ## alert user via sms not snaptext
+        #r = requests.post("https://snaptext.live",data=json.dumps({"message":"Your Pi is online at {}".format(ipaddress),"to":piid,"from":"Raspberry Pi Turnkey"}))
+        #print(r.json())
 
-        ## STARTUP K3S
-        subprocess.Popen("./startup.sh")
+        # STARTUP K3S
+        #subprocess.Popen("./startup.sh")
         while True:
             time.sleep(60000)
     else:
