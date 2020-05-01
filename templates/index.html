@@ -39,6 +39,15 @@
         </select>
       </div>
 
+      <div class="form-group">
+        <label for="inputProjects">Install Project:</label>
+        <select class="form-control" id="inputProjects" name="projectIDs" required>
+          {% for p in projectIDs %}
+          <option>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
       <div class="form-label-group">
         <input id="inputPassword" autocorrect="off" autocapitalize="none" pattern=".{0}|.{8,}" name="password" class="form-control" placeholder="SSID Password" required>
         <label for="inputPassword">Password</label>

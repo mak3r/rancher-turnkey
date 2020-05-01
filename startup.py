@@ -41,6 +41,14 @@ def getssid():
     ssid_list = sorted(list(set(ssid_list)))
     return ssid_list
 
+def getProjectList():
+    project_list = [
+        ['k3s', 'Lightweight Kubernetes Cluster'],
+        ['Rancher', 'Rancher Management Server'],
+        ['k3os', 'An OS optimized for container orchestration']
+    ]
+    return project_list
+
 def id_generator(size=6, chars=string.ascii_lowercase + string.digits):
     logging.debug("running id_generator()")
     return ''.join(random.choice(chars) for _ in range(size))
@@ -64,8 +72,9 @@ update_config=1
 def main():
     logging.debug('entered main()')
     piid = open('pi.id', 'r').read().strip()
+    projects = zip(*getProjectList())
     # TODO: UPDATE THIS TO REFLECT ACTUAL CONTACT METHOD (SMS?)
-    return render_template('index.html', ssids=getssid(), message="Once connected you'll find IP address @ <a href='https://snaptext.live/{}' target='_blank'>snaptext.live/{}</a>.".format(piid,piid))
+    return render_template('index.html', ssids=getssid(), projectIDs=next(projects), message="Once connected you'll find IP address @ <a href='https://snaptext.live/{}' target='_blank'>snaptext.live/{}</a>.".format(piid,piid))
 
 # Captive portal when connected with iOS or Android
 @app.route('/generate_204')
@@ -165,6 +174,7 @@ def signin():
     logging.debug('entered signin()')
     email = request.form['email']
     ssid = request.form['ssid']
+    install_type = request.form['installType']
     password = request.form['password']
 
     pwd = 'psk="' + password + '"'
