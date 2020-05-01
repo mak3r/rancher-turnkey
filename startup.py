@@ -91,10 +91,6 @@ def check_cred(ssid, password):
     testconf = wpadir + 'test.conf'
     wpalog = wpadir + 'wpa.log'
     wpapid = wpadir + 'wpa.pid'
-    logging.debug("wpadir: " + wpadir)
-    logging.debug("testconf: " + testconf)
-    logging.debug("wpalog: " + wpalog) 
-    logging.debug("wpapid: " + wpapid)
 
     if not os.path.exists(wpadir):
         os.mkdir(wpadir)
@@ -114,18 +110,12 @@ def check_cred(ssid, password):
         if stop:
             logging.debug("stopping services [hostapd,dnsmaq,dhcpcd]")
             # Services need to be stopped to free up wlan0 interface
-            logging.debug(subprocess.check_output(['systemctl', "stop", "hostapd", "dnsmasq", "dhcpcd"]).decode('utf-8'))
-            # wpa_supplicant will need to be started
-            logging.debug(subprocess.check_output(['systemctl', "enable", "wpa_supplicant"]).decode('utf-8'))
-            logging.debug(subprocess.check_output(['systemctl', "start", "wpa_supplicant"]).decode('utf-8'))
+            subprocess.check_output(['systemctl', "stop", "hostapd", "dnsmasq", "dhcpcd"])
         else:
             logging.debug("starting services [hostapd,dnsmaq,dhcpcd]")
-            # wpa_supplicant should be stopped before we re-enable the AP
-            logging.debug(subprocess.check_output(['systemctl', "stop", "wpa_supplicant"]).decode('utf-8'))
-            logging.debug(subprocess.check_output(['systemctl', "disable", "wpa_supplicant"]).decode('utf-8'))
-            logging.debug(subprocess.check_output(['systemctl', "restart", "dnsmasq", "dhcpcd"]).decode('utf-8'))
+            subprocess.check_output(['systemctl', "restart", "dnsmasq", "dhcpcd"])
             time.sleep(15)
-            logging.debug(subprocess.check_output(['systemctl', "restart", "hostapd"]).decode('utf-8'))
+            subprocess.check_output(['systemctl', "restart", "hostapd"])
 
     # Sentences to check for
     fail = "pre-shared key may be incorrect"
@@ -202,6 +192,9 @@ def wificonnected():
     logging.debug('entered wificonnected()')
     result = subprocess.check_output(['iwconfig', 'wlan0'])
     logging.debug("iwconfig wlan0: " + result.decode('utf-8'))
+    # The assumption of this match filter is that 
+    # the network ESSID is quoted when connected and 
+    # nothing is quoted when not connected
     matches = re.findall(r'\"(.+?)\"', result.split(b'\n')[0].decode('utf-8'))
     if len(matches) > 0:
         logging.debug("got connected to " + matches[0])
