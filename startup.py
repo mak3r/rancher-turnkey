@@ -171,10 +171,11 @@ def send_static(path):
 
 @app.route('/signin', methods=['POST'])
 def signin():
+    global project
     logging.debug('entered signin()')
     email = request.form['email']
     ssid = request.form['ssid']
-    install_type = request.form['installType']
+    project = request.form['projectIDs']
     password = request.form['password']
 
     pwd = 'psk="' + password + '"'
@@ -263,6 +264,8 @@ if __name__ == "__main__":
 
         # STARTUP K3S
         #subprocess.Popen("./startup.sh")
+        ## figure out which project to install
+        logging.debug("Install project" + project)
         while True:
             time.sleep(60000)
     else:
