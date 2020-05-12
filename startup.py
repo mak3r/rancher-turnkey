@@ -14,16 +14,21 @@ import sys
 from flask import Flask, request, send_from_directory, jsonify, render_template, redirect
 app = Flask(__name__, static_url_path='')
 
-logfile = '/home/pi/raspberry-pi-turnkey/turnkey.log'
-logging.basicConfig(filename=logfile, filemode='w', level=logging.DEBUG)
+logfile = '/var/log/turnkey.log'
+FORMAT = '%(asctime)-15s %(message)s'
+logging.basicConfig(filename=logfile, format=FORMAT, level=logging.DEBUG)
+logger = logging.getLogger('turnkey')
+logger.info("****************** Begin turnkey startup.py ******************")
 
 currentdir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(currentdir)
 
+project='none'
+
 ssid_list = []
 def getssid():
     global ssid_list
-    logging.debug('entered getssid()')
+    logger.debug('entered getssid()')
     if len(ssid_list) > 0:
         return ssid_list
     ssid_list = []
@@ -37,7 +42,7 @@ def getssid():
                 ssid_list.append(a[1])
             except:
                 pass
-    logging.debug(ssid_list)
+    logger.debug(ssid_list)
     ssid_list = sorted(list(set(ssid_list)))
     return ssid_list
 
@@ -49,9 +54,11 @@ def getProjectList():
     ]
     return project_list
 
-def id_generator(size=6, chars=string.ascii_lowercase + string.digits):
-    logging.debug("running id_generator()")
-    return ''.join(random.choice(chars) for _ in range(size))
+# FIXME: https://stackoverflow.com/questions/18622781/why-is-numpy-random-choice-so-slow
+def id_generator():#size=6, chars=string.ascii_lowercase + string.digits):
+    logger.debug("running id_generator()")
+    #return ''.join(random.choice(chars) for _ in range(size))
+    return 'abcdef' 
 
 wpa_conf = """country=US
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
@@ -70,7 +77,7 @@ update_config=1
 
 @app.route('/')
 def main():
-    logging.debug('entered main()')
+    logger.debug('entered main()')
     piid = open('pi.id', 'r').read().strip()
     projects = zip(*getProjectList())
     # TODO: UPDATE THIS TO REFLECT ACTUAL CONTACT METHOD (SMS?)
@@ -79,22 +86,22 @@ def main():
 # Captive portal when connected with iOS or Android
 @app.route('/generate_204')
 def redirect204():
-    logging.debug('entered redirect204()')
+    logger.debug('entered redirect204()')
     return redirect("http://192.168.4.1", code=302)
 
 @app.route('/hotspot-detect.html')
 def applecaptive():
-    logging.debug('entered applecaptive()')
+    logger.debug('entered applecaptive()')
     return redirect("http://192.168.4.1", code=302)
 
 # Not working for Windows, needs work!
 @app.route('/ncsi.txt')
 def windowscaptive():
-    logging.debug('entered windowscaptive()')
+    logger.debug('entered windowscaptive()')
     return redirect("http://192.168.4.1", code=302)
 
 def check_cred(ssid, password):
-    logging.debug('entered check_cred()')
+    logger.debug('entered check_cred()')
     '''Validates ssid and password and returns True if valid and False if not valid'''
     wpadir = currentdir + '/wpa/'
     testconf = wpadir + 'test.conf'
@@ -110,38 +117,37 @@ def check_cred(ssid, password):
 
     # Generate temp wpa.conf
     result = subprocess.check_output(['wpa_passphrase', ssid, password])
-    logging.debug("generated wpa.conf with result: '" + result.decode('utf-8') + "'")
+    logger.debug("generated wpa.conf with result: '" + result.decode('utf-8') + "'")
     with open(testconf, 'w') as f:
         f.write(result.decode('utf-8'))
 
     def stop_ap(stop):
-        logging.debug("stop request is: " + str(stop))
+        logger.debug("stop request is: " + str(stop))
         if stop:
-            logging.debug("stopping services [hostapd,dnsmaq,dhcpcd]")
+            logger.debug("stopping services [hostapd,dnsmasq,dhcpcd]")
             # Services need to be stopped to free up wlan0 interface
             subprocess.check_output(['systemctl', "stop", "hostapd", "dnsmasq", "dhcpcd"])
         else:
-            logging.debug("starting services [hostapd,dnsmaq,dhcpcd]")
+            logger.debug("starting services [hostapd,dnsmasq,dhcpcd]")
             subprocess.check_output(['systemctl', "restart", "dnsmasq", "dhcpcd"])
             time.sleep(15)
             subprocess.check_output(['systemctl', "restart", "hostapd"])
 
     # Sentences to check for
     fail = "pre-shared key may be incorrect"
-    success = "WPA: Key negotiation completed"
+    # success = "WPA: Key negotiation completed"
+    success = "Successfully initialized wpa_supplicant"
 
     stop_ap(True)
-
-    # RPi 4 driver is wext. RPi older driver is nl80211
     result = subprocess.check_output(['wpa_supplicant',
-                                      "-Dwext",
                                       "-iwlan0",
                                       "-c", testconf,
                                       "-f", wpalog,
                                       "-B",
                                       "-P", wpapid])
 
-    logging.debug("wpa_supplicant test credentials outcome: '" + result.decode('utf-8') + "'")
+    logger.debug("wpa_supplicant test credentials outcome: '" + result.decode('utf-8') + "'")
+    # TODO: Add a timeout to the loop as the magic success/fail strings may be invalid
     checkwpa = True
     while checkwpa:
         with open(wpalog, 'r') as f:
@@ -166,51 +172,56 @@ def check_cred(ssid, password):
 
 @app.route('/static/<path:path>')
 def send_static(path):
-    logging.debug('entered send_static()')
+    logger.debug('entered send_static()')
     return send_from_directory('static', path)
 
 @app.route('/signin', methods=['POST'])
 def signin():
     global project
-    logging.debug('entered signin()')
+    logger.debug('entered signin()')
     email = request.form['email']
     ssid = request.form['ssid']
     project = request.form['projectIDs']
     password = request.form['password']
 
+    # TODO: put the encrypted password here, not plain text!
     pwd = 'psk="' + password + '"'
     if password == "":
         pwd = "key_mgmt=NONE" # If open AP
 
-    logging.debug(email + ssid + password)
+    logger.debug(email + ssid + password)
     valid_psk = check_cred(ssid, password)
-    logging.debug("valid_psk: " + str(valid_psk))
+    logger.debug("valid_psk: " + str(valid_psk))
     if not valid_psk:
         # User will not see this because they will be disconnected but we need to break here anyway
         return render_template('ap.html', message="Wrong password!")
 
     # Configure the WiFi module to connect to the desired network
-    with open('wpa.conf', 'w') as f:
+    with open('/etc/wpa_supplicant/wpa_supplicant.conf', 'w') as f:
         f.write(wpa_conf % (ssid, pwd))
     with open('status.json', 'w') as f:
         f.write(json.dumps({'status':'disconnected'}))
     subprocess.Popen(["./disable_ap.sh"])
+    logger.debug("disabled access point via disable_ap.sh")
     piid = open('pi.id', 'r').read().strip()
     # TODO: UPDATE THIS MESSAGE BASED ON THE CONTACT METHOD USED (SMS?)
     return render_template('index.html', message="Please wait 2 minutes to connect. Then your IP address will show up at <a href='https://snaptext.live/{}'>snaptext.live/{}</a>.".format(piid,piid))
 
 def wificonnected():
-    logging.debug('entered wificonnected()')
+    logger.debug('entered wificonnected()')
     result = subprocess.check_output(['iwconfig', 'wlan0'])
-    logging.debug("iwconfig wlan0: " + result.decode('utf-8'))
+    logger.debug("iwconfig wlan0: " + result.decode('utf-8'))
     # The assumption of this match filter is that 
     # the network ESSID is quoted when connected and 
     # nothing is quoted when not connected
     matches = re.findall(r'\"(.+?)\"', result.split(b'\n')[0].decode('utf-8'))
     if len(matches) > 0:
-        logging.debug("got connected to " + matches[0])
+        logger.debug("got connected to " + matches[0])
         return True
     return False
+
+def runapp():
+    app.run(host="0.0.0.0", port=80, threaded=True)
 
 if __name__ == "__main__":
     # things to run the first time it boots
@@ -222,7 +233,7 @@ if __name__ == "__main__":
         #subprocess.Popen("./expand_filesystem.sh")
         time.sleep(300)
     piid = open('pi.id', 'r').read().strip()
-    logging.debug(piid)
+    logger.debug(piid)
     time.sleep(15)
         
     # get status
@@ -234,11 +245,14 @@ if __name__ == "__main__":
         s = json.load(open('status.json'))
 
     #check connection
-    if wificonnected():
+    wifi_connected = wificonnected()
+    if wifi_connected:
         s['status'] = 'connected'
-    if not wificonnected():
+    if not wifi_connected:
         if s['status'] == 'connected': # Don't change if status in status.json is hostapd
             s['status'] = 'disconnected'
+
+    logger.debug("connected status: " + s['status'])
 
     with open('status.json', 'w') as f:
         f.write(json.dumps(s))
@@ -246,9 +260,14 @@ if __name__ == "__main__":
         s['status'] = 'hostapd'
         with open('status.json', 'w') as f:
             f.write(json.dumps(s))
+            logger.debug("wrote status.json")
         with open('wpa.conf', 'w') as f:
             f.write(wpa_conf_default)
+            logger.debug("wrote wpa.conf")
         subprocess.Popen("./enable_ap.sh")
+        logger.debug("Enabled access point via enable_ap.sh")
+        # no need to restart - the AP is ready now
+        runapp()
     elif s['status'] == 'connected':
         piid = open('pi.id', 'r').read().strip()
 
@@ -265,8 +284,8 @@ if __name__ == "__main__":
         # STARTUP K3S
         #subprocess.Popen("./startup.sh")
         ## figure out which project to install
-        logging.debug("Install project" + project)
+        logger.debug("Install project" + project)
         while True:
             time.sleep(60000)
     else:
-        app.run(host="0.0.0.0", port=80, threaded=True)
+        runapp()

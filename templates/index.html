@@ -31,19 +31,19 @@
       </div>
 
       <div class="form-group">
-        <label for="inputSSID">SSID</label>
-        <select class="form-control" id="inputSSID" name="ssid">
-          {% for s in ssids %}
-          <option>{{ s }}</option>
+        <label for="inputProjects">Install Project:</label>
+        <select class="form-control" id="inputProjects" name="projectIDs" required>
+          {% for p in projectIDs %}
+          <option>{{ p }}</option>
           {% endfor %}
         </select>
       </div>
 
       <div class="form-group">
-        <label for="inputProjects">Install Project:</label>
-        <select class="form-control" id="inputProjects" name="projectIDs" required>
-          {% for p in projectIDs %}
-          <option>{{ p }}</option>
+        <label for="inputSSID">SSID</label>
+        <select class="form-control" id="inputSSID" name="ssid">
+          {% for s in ssids %}
+          <option>{{ s }}</option>
           {% endfor %}
         </select>
       </div>

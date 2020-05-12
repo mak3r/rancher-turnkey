@@ -3,14 +3,14 @@
 # update and upgrade the current system
 apt update && apt upgrade -y
 # install required tools
-apt install -y dnsmasq hostapd
+apt install -y dnsmasq hostapd python3-flask python3-requests
 
 # stop dnsmasq and hostapd while we reconfigure them
 systemctl stop dnsmasq
 systemctl stop hostapd
 
 ## copy disabled dhcpcd configuration
-cp /etc/dhcpcd.conf ./config/dhcpcd.conf.disabled
+cp /etc/dhcpcd.conf /var/lib/rancher/turnkey/config/dhcpcd.conf.disabled
 
 # configure dhcpcd
 cat <<EOF >> /etc/dhcpcd.conf
@@ -21,7 +21,7 @@ interface wlan0
 EOF
 
 ## Copy dhcpcd configuration to config directory
-cp /etc/dhcpcd.conf ./config/dhcpcd.conf
+cp /etc/dhcpcd.conf /var/lib/rancher/turnkey/config/dhcpcd.conf
 
 # configuration done, restart dhcpcd
 service dhcpcd restart
@@ -36,9 +36,9 @@ dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
 EOF
 
 ## copy the dnsmasq config to config directory
-cp /etc/dnsmasq.conf ./config/dnsmasq.conf
+cp /etc/dnsmasq.conf /var/lib/rancher/turnkey/config/dnsmasq.conf
 ## Create the disabled version
-sed 's/^.*$/#&/g' ./config/dnsmasq.conf > ./config/dnsmasq.conf.disabled 
+sed 's/^.*$/#&/g' /var/lib/rancher/turnkey/config/dnsmasq.conf > /var/lib/rancher/turnkey/config/dnsmasq.conf.disabled 
 
 # startup the dnsmasq service
 systemctl start dnsmasq
@@ -66,7 +66,7 @@ rsn_pairwise=CCMP
 EOF
 
 ## Copy hostapd.conf to the config directory
-cp /etc/hostapd/hostapd.conf ./config/hostapd.conf
+cp /etc/hostapd/hostapd.conf /var/lib/rancher/turnkey/config/hostapd.conf
 
 # fire up hostapd
 systemctl unmask hostapd
@@ -95,6 +95,16 @@ fi
 
 # ok, looks like we passed the waypoint checks - continue
 
+# configure wpa_supplicant service
+cp /var/lib/rancher/turnkey/image-prep/setup/wpa_supplicant.service /etc/systemd/system/multi-user.target.wants
+
+# configure network interfaces
+cp /var/lib/rancher/turnkey/image-prep/setup/wlan0 /etc/network/interfaces.d/.
+cp /var/lib/rancher/turnkey/image-prep/setup/eth0 /etc/network/interfaces.d/.
+
+# Make sure wpa supplicant is off and hostapd is on
+/var/lib/rancher/turnkey/enable_ap.sh
+
 # enable ip forwarding 
 sed -i.bak 's/\(#\)\(net\.ipv4\.ip_forward\)/\2/' /etc/sysctl.conf 
 
@@ -104,14 +114,30 @@ iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 iptables-save > /etc/iptables.ipv4.nat
 
 # make sure the iptables rule sticks on boot
-sed -i.bak '0,/^exit 0/s/exit 0/iptables-restore < \/etc\/iptables\.ipv4\.nat\n&/'  /etc/rc.local
+cp /etc/rc.local /etc/rc.local.orig
+sed -i.bak '0,/^exit 0/s/^exit 0/iptables-restore < \/etc\/iptables\.ipv4\.nat\n&/'  /etc/rc.local
+sed -i.bak '0,/^exit 0/s/^exit 0/\/usr\/bin\/python3 \/var\/lib\/rancher\/turnkey\/startup.py\n&/'  /etc/rc.local
+
+# setup a tmp log for rc.local just in case the prior commands need debugging
+sed -i.bak '0,/^$/s/^$/exec 2> \/tmp\/rc.local.log      # send stderr from rc.local to a log file\n&/' /etc/rc.local
+sed -i.bak '0,/^$/s/^$/exec 1>&2                      # send stdout to the same log file\n&/' /etc/rc.local
+sed -i.bak '0,/^$/s/^$/set -x                         # tell sh to display commands before execution\n&/' /etc/rc.local
+
+
+# copy the hostapd service (default service was not always coming up)
+cp /var/lib/rancher/turnkey/image-prep/setup/hostapd.service /etc/systemd/system/multi-user.target.wants/hostapd.service
 
 # copy the reset service and link it
-cp ./reset-turnkey.service /lib/systemd/system/reset-turnkey.service
+cp /var/lib/rancher/turnkey/image-prep/setup/reset-turnkey.service /etc/systemd/system/reset-turnkey.service
 # create a softlink as a multi-user target
-ln -s /lib/systemd/system/reset-turnkey.service /etc/systemd/system/multi-user.target.wants/reset-turnkey.service
+if [ ! -f "/etc/systemd/system/multi-user.target.wants/reset-turnkey.service" ]; then
+  ln -s /etc/systemd/system/reset-turnkey.service /etc/systemd/system/multi-user.target.wants/reset-turnkey.service
+fi
+
+# copy the lograte configuration and enable it
+cp /var/lib/rancher/turnkey/image-prep/setup/turnkey.logrotate.conf /etc/logrotate.d/99-turnkey.conf
 
 # pre-install k3s components
-./k3s-prep.sh
+/var/lib/rancher/turnkey/image-prep/setup/k3s-prep.sh
 
 # pre-install Rancher components

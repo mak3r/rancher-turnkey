@@ -1,11 +1,12 @@
 [Unit]
 Description=Reset the Rancher turnkey system
 ConditionPathExists=/boot/reset-turnkey
+Before=rc-local.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/home/pi/rancher-turnkey/reset_turnkey.sh
+ExecStart=/var/lib/rancher/turnkey/reset_turnkey.sh
 
 [Install]
 WantedBy=multi-user.target
