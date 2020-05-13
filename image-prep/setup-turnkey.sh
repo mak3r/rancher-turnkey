@@ -5,6 +5,9 @@ apt update && apt upgrade -y
 # install required tools
 apt install -y dnsmasq hostapd python3-flask python3-requests
 
+# make sure wlan0 is not connected
+ifconfig wlan0 down
+
 # stop dnsmasq and hostapd while we reconfigure them
 systemctl stop dnsmasq
 systemctl stop hostapd
@@ -95,15 +98,16 @@ fi
 
 # ok, looks like we passed the waypoint checks - continue
 
+# Make sure wpa supplicant is off 
+systemctl stop wpa_supplicant
+systemctl disable wpa_supplicant
+
 # configure wpa_supplicant service
 cp /var/lib/rancher/turnkey/image-prep/setup/wpa_supplicant.service /etc/systemd/system/multi-user.target.wants
 
 # configure network interfaces
 cp /var/lib/rancher/turnkey/image-prep/setup/wlan0 /etc/network/interfaces.d/.
 cp /var/lib/rancher/turnkey/image-prep/setup/eth0 /etc/network/interfaces.d/.
-
-# Make sure wpa supplicant is off and hostapd is on
-/var/lib/rancher/turnkey/enable_ap.sh
 
 # enable ip forwarding 
 sed -i.bak 's/\(#\)\(net\.ipv4\.ip_forward\)/\2/' /etc/sysctl.conf 
