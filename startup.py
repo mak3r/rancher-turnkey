@@ -231,7 +231,7 @@ if __name__ == "__main__":
         with open('pi.id', 'w') as f:
             f.write(id_generator())
         #subprocess.Popen("./expand_filesystem.sh")
-        time.sleep(300)
+        #time.sleep(300)
     piid = open('pi.id', 'r').read().strip()
     logger.debug(piid)
     time.sleep(15)
